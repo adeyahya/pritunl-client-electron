@@ -20,6 +20,9 @@ var colors = [
   '#66BB6A',
 ];
 
+var vpnLoopTimeout;
+var minute = 1000 * 60;
+
 var openMenu = function($profile) {
   $profile.addClass('menu-open');
   $profile.find('.menu').addClass('show');
@@ -69,7 +72,7 @@ var closeEditor = function($profile, typ) {
     $editor.attr('class', 'editor');
   }, 185);
 };
-
+var vpnLoopTimeout = null;
 var renderProfile = function(index, prfl) {
   var edtr;
   var edtrType;
@@ -79,6 +82,64 @@ var renderProfile = function(index, prfl) {
   var $profile = $(Mustache.render(template, data));
 
   service.add(prfl);
+
+  var disconnectFunction = function() {
+    if (vpnLoopTimeout) {
+      clearTimeout(vpnLoopTimeout);
+    }
+
+    prfl.disconnect();
+    closeMenu($profile);
+  }
+  
+  var connectFunction = function(cb) {
+    if ($profile.find('.menu .connect').hasClass('disabled')) {
+      return;
+    }
+    $profile.find('.menu .connect').addClass('disabled');
+  
+    prfl.preConnect(function() {
+      var data = prfl.export();
+  
+      if (prfl.preConnectMsg) {
+        var preConnectMsg = prfl.preConnectMsg;
+        if (preConnectMsg instanceof Array) {
+          preConnectMsg = preConnectMsg.join('\n');
+        }
+  
+        remote.dialog.showMessageBox(
+          {
+            type: 'none',
+            title: 'Pritunl - Connecting to Server',
+            message: 'Connecting to ' + data.name,
+            detail: preConnectMsg,
+            buttons: ['Disconnect', 'Connect'],
+          }
+        ).then(function(resp) {
+          if (resp.response === 1) {
+            prflConnect();
+          } else {
+            closeMenu($profile);
+          }
+        });
+      } else {
+        prflConnect();
+      }
+    });
+  }
+
+  var startVpn = function() {
+    connectFunction();
+  }
+
+  var restartLoop = function() {
+    vpnLoopTimeout = setTimeout(() => {
+      disconnectFunction();
+      setTimeout(() => {
+        startVpn();
+      }, 1000 * 3);
+    }, minute * 50);
+  }
 
   prfl.onUpdate = function() {
     var data = prfl.export();
@@ -99,6 +160,7 @@ var renderProfile = function(index, prfl) {
   };
 
   prfl.onUptime = function(curTime) {
+    if (!vpnLoopTimeout) restartLoop();
     var uptime = prfl.getUptime(curTime);
     if (!uptime) {
       return;
@@ -398,41 +460,7 @@ var renderProfile = function(index, prfl) {
     });
   };
 
-  $profile.find('.menu .connect').click(function() {
-    if ($profile.find('.menu .connect').hasClass('disabled')) {
-      return;
-    }
-    $profile.find('.menu .connect').addClass('disabled');
-
-    prfl.preConnect(function() {
-      var data = prfl.export();
-
-      if (prfl.preConnectMsg) {
-        var preConnectMsg = prfl.preConnectMsg;
-        if (preConnectMsg instanceof Array) {
-          preConnectMsg = preConnectMsg.join('\n');
-        }
-
-        remote.dialog.showMessageBox(
-          {
-            type: 'none',
-            title: 'Pritunl - Connecting to Server',
-            message: 'Connecting to ' + data.name,
-            detail: preConnectMsg,
-            buttons: ['Disconnect', 'Connect'],
-          }
-        ).then(function(resp) {
-          if (resp.response === 1) {
-            prflConnect();
-          } else {
-            closeMenu($profile);
-          }
-        });
-      } else {
-        prflConnect();
-      }
-    });
-  });
+  $profile.find('.menu .connect').click(startVpn);
 
   $profile.find('.menu .connect-cancel').click(function() {
     var $menu = $profile.find('.menu');
@@ -453,10 +481,7 @@ var renderProfile = function(index, prfl) {
     unbindAll($profile);
   });
 
-  $profile.find('.menu .disconnect').click(function() {
-    prfl.disconnect();
-    closeMenu($profile);
-  });
+  $profile.find('.menu .disconnect').click(disconnectFunction);
 
   $profile.find('.menu .delete').click(function() {
     $profile.find('.menu').addClass('deleting');
