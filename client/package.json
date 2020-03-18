@@ -2,6 +2,9 @@
   "name": "pritunl",
   "version": "1.0.2317.40",
   "main": "www/main.js",
+  "scripts": {
+    "build:linux64": "electron-packager ./ Pritunl --platform=linux --arch=x64 --icon=./www/img/logo.png --out=../build/linux"
+  },
   "dependencies": {
     "jquery": "3.4.1",
     "mustache": "3.2.1",
